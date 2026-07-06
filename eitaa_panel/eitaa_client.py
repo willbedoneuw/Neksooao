@@ -57,7 +57,12 @@ class EitaaClient:
     # ------------------------------------------------------------------ #
     async def start(self) -> "EitaaClient":
         self._pw = await async_playwright().start()
-        self._browser = await self._pw.chromium.launch(headless=self.headless)
+
+        launch_kwargs = {"headless": self.headless, "args": config.BROWSER_ARGS}
+        if config.BROWSER_EXECUTABLE_PATH:
+            launch_kwargs["executable_path"] = config.BROWSER_EXECUTABLE_PATH
+            logger.info("استفاده از مرورگر سیستمی: %s", config.BROWSER_EXECUTABLE_PATH)
+        self._browser = await self._pw.chromium.launch(**launch_kwargs)
 
         context_kwargs = {
             "locale": "fa-IR",

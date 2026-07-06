@@ -29,6 +29,16 @@ EITAA_WEB_URL = os.getenv("EITAA_WEB_URL", "https://web.eitaa.com").rstrip("/")
 
 HEADLESS = _as_bool(os.getenv("HEADLESS"), default=False)
 
+# اگر مرورگر پلی‌رایت دانلود نشد، مسیر chromium سیستمی را اینجا بده
+# مثال: /usr/bin/chromium یا /usr/bin/chromium-browser
+BROWSER_EXECUTABLE_PATH = os.getenv("BROWSER_EXECUTABLE_PATH") or None
+
+# آرگومان‌های راه‌اندازی مرورگر. --no-sandbox برای اجرا با کاربر root لازم است.
+_default_browser_args = "--no-sandbox,--disable-dev-shm-usage"
+BROWSER_ARGS = [
+    a.strip() for a in os.getenv("BROWSER_ARGS", _default_browser_args).split(",") if a.strip()
+]
+
 MIN_SEND_DELAY = float(os.getenv("MIN_SEND_DELAY", "3"))
 MAX_SEND_DELAY = float(os.getenv("MAX_SEND_DELAY", "9"))
 
