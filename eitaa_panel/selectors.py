@@ -1,121 +1,110 @@
-"""سلکتورهای متمرکز صفحه‌ی web.eitaa.com.
+"""سلکتورهای صفحه‌ی web.eitaa.com.
 
-⚠️ مهم:
-    ساختار HTML ایتاوب به‌صورت رسمی مستند نشده و ممکن است با این حدس‌ها فرق
-    داشته باشد یا در آینده تغییر کند. بعد از باز کردن سایت با DevTools
-    (کلیک راست → Inspect / بازرسی) سلکتور درست را پیدا و اینجا اصلاح کن.
+کشف مهم: ایتاوب یک فورک از «Telegram Web K» است، پس ساختار HTML همان است
+(کلاس‌هایی مثل input-field-input, btn-primary, chatlist-chat, input-message-input).
 
-قرارداد:
-    هر ورودی یک «لیست» از سلکتورهای کاندید است که به‌ترتیب امتحان می‌شوند تا
-    اولین موردی که پیدا شود استفاده شود. برای تنظیم، سلکتور درست را به ابتدای
-    لیست اضافه کن.
+قرارداد: هر ورودی یک لیست از سلکتورهای کاندید است که به‌ترتیب امتحان می‌شوند.
+سلکتورهای لاگین از روی DOM واقعی تأیید شده‌اند؛ سلکتورهای مخاطبین/ارسال بر اساس
+ساختار تلگرام‌وب حدس زده شده‌اند و بعد از لاگین با دستور inspect نهایی می‌شوند.
 """
 
-# --- فلوی لاگین ---
+# --- فلوی لاگین (تأییدشده از DOM واقعی) ---
+# فیلد شماره یک div با contenteditable است، نه input.
 PHONE_INPUT = [
+    'div.input-field-input[inputmode="decimal"]',
+    '.input-field-input[inputmode="decimal"]',
     'input[type="tel"]',
-    'input[name="phone"]',
-    'input[inputmode="tel"]',
-    'input[autocomplete="tel"]',
 ]
 PHONE_SUBMIT = [
-    'button:has-text("بعدی")',
+    'button.btn-primary:has-text("ادامه")',
+    'button.btn-primary',
     'button:has-text("ادامه")',
     'button:has-text("Next")',
-    'button[type="submit"]',
 ]
+# صفحه‌ی کد بعد از «ادامه» می‌آید؛ فیلد کد هم contenteditable است.
 CODE_INPUT = [
-    'input[name="code"]',
+    '.input-field-input[inputmode="numeric"]',
+    'div.input-field-input[contenteditable="true"]',
+    '.input-field-input[inputmode="decimal"]',
     'input[autocomplete="one-time-code"]',
-    'input[inputmode="numeric"]',
-    'input[type="tel"]',
 ]
+# تلگرام‌وب معمولاً کد را خودکار ثبت می‌کند؛ این‌ها فقط برای احتیاط‌اند.
 CODE_SUBMIT = [
-    'button:has-text("ورود")',
-    'button:has-text("تایید")',
-    'button:has-text("تأیید")',
-    'button[type="submit"]',
+    'button.btn-primary:has-text("بعدی")',
+    'button.btn-primary:has-text("ورود")',
 ]
 
-# --- نشانه‌های لاگین موفق (لیست چت‌ها دیده می‌شود) ---
+# --- نشانه‌های لاگین موفق ---
 CHAT_LIST = [
-    "#chatlist",
+    "#column-left",
     ".chatlist",
-    '[class*="chatlist" i]',
-    '[class*="ChatList" i]',
-    '[class*="chat-list" i]',
+    "ul.chatlist",
+    ".chatlist-container",
+    ".input-search-input",
 ]
 
 # --- جستجو و باز کردن چت ---
 SEARCH_INPUT = [
-    'input[type="search"]',
-    "input.input-search",
-    'input[placeholder*="جستجو"]',
-    'input[placeholder*="Search"]',
+    ".input-search-input",
+    "input.input-search-input",
+    '#column-left input[type="text"]',
 ]
 SEARCH_RESULT_ITEM = [
     ".search-super .chatlist-chat",
-    "ul.chatlist li",
-    '[class*="search"] [class*="chatlist-chat"]',
-    '[class*="search"] li',
+    "#search-container .chatlist-chat",
+    "ul.chatlist a.chatlist-chat",
+    ".chatlist-chat",
 ]
 
-# --- مخاطبین ---
-# دکمه/آیتم منو برای باز کردن لیست مخاطبین
+# --- مخاطبین (منوی همبرگری → مخاطبین) ---
 CONTACTS_MENU_BUTTON = [
-    'button:has-text("مخاطبین")',
-    'button:has-text("Contacts")',
+    ".btn-menu-toggle",
+    ".sidebar-tools-button",
+    "button.btn-icon.sidebar-tools-button",
+]
+CONTACTS_MENU_ITEM = [
     '.btn-menu-item:has-text("مخاطبین")',
-    '[class*="menu"] :text("مخاطبین")',
+    '.btn-menu-item:has-text("Contacts")',
 ]
 CONTACT_ITEM = [
-    ".contacts-container li.chatlist-chat",
-    '[class*="contacts" i] li',
-    "ul.contacts li",
-    '[class*="contact" i][class*="item" i]',
+    ".contacts-container .chatlist-chat",
+    ".sidebar-slider .chatlist-chat",
+    "ul.chatlist li.chatlist-chat",
+    ".chatlist-chat",
 ]
-# نام مخاطب داخل هر آیتم (نسبی به CONTACT_ITEM)
 CONTACT_NAME = [
     ".peer-title",
-    '[class*="title" i]',
-    ".contact-name",
+    ".dialog-title .peer-title",
 ]
 
 # --- کامپوزر پیام ---
 MESSAGE_INPUT = [
     'div.input-message-input[contenteditable="true"]',
-    'div[contenteditable="true"][data-placeholder]',
+    '.input-message-container [contenteditable="true"]',
     'div[contenteditable="true"]',
-    "textarea",
 ]
 SEND_BUTTON = [
-    "button.send",
-    'button[class*="send" i]',
-    'button:has-text("ارسال")',
-    'button[aria-label*="Send"]',
+    ".btn-send",
+    "button.btn-send",
+    ".btn-icon.btn-send",
 ]
 
-# --- ضمیمه کردن فایل/عکس ---
+# --- ضمیمه فایل/عکس ---
 ATTACH_BUTTON = [
-    "button.attach",
-    '[class*="attach" i]',
-    'button[title*="ضمیمه"]',
-    'button[aria-label*="Attach"]',
+    ".attach-file",
+    ".btn-icon.attach-file",
 ]
 FILE_INPUT = [
     'input[type="file"]',
 ]
-# فیلد کپشن در دیالوگ ارسال مدیا (اغلب همان کامپوزر است)
 CAPTION_INPUT = [
-    'div.popup-send-photo div[contenteditable="true"]',
-    'div[contenteditable="true"][data-placeholder]',
-    'div[contenteditable="true"]',
-    "textarea",
+    ".popup-new-media .input-message-input",
+    ".popup .input-message-input",
+    'div.input-message-input[contenteditable="true"]',
 ]
-# دکمه‌ی تأیید نهایی ارسال مدیا در دیالوگ
 MEDIA_SEND_CONFIRM = [
-    ".popup-send-photo button.send",
-    'button:has-text("ارسال")',
-    "button.send",
-    'button[class*="send" i]',
+    ".popup-new-media .btn-primary",
+    ".popup .btn-primary",
+    ".popup .btn-send",
+    ".btn-send",
 ]

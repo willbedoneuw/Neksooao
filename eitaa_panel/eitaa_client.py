@@ -35,6 +35,21 @@ logger = logging.getLogger(__name__)
 SendResult = Tuple[str, bool, Optional[str]]
 
 
+def normalize_iran_phone(raw: str) -> str:
+    """شماره را به فرمت ملی ۱۰رقمی (9xxxxxxxxx) تبدیل می‌کند.
+
+    فیلد شماره از قبل +98 دارد، پس فقط بخش ملی را تایپ می‌کنیم.
+    """
+    p = raw.strip().replace(" ", "").replace("-", "").replace("+", "")
+    if p.startswith("0098"):
+        p = p[4:]
+    if p.startswith("98") and len(p) > 10:
+        p = p[2:]
+    if p.startswith("0"):
+        p = p[1:]
+    return p
+
+
 class EitaaClient:
     def __init__(
         self,
@@ -180,16 +195,20 @@ class EitaaClient:
             logger.info("از قبل لاگین است.")
             return False
 
+        # فیلد شماره یک contenteditable است که از قبل +98 دارد؛
+        # کلیک می‌کنیم، مکان‌نما را به آخر می‌بریم و بخش ملی شماره را تایپ می‌کنیم.
         phone_field = await self._find(S.PHONE_INPUT)
         await phone_field.click()
-        await phone_field.fill(phone)
-        await self._pause(0.5, 1.2)
+        national = normalize_iran_phone(phone)
+        await self.page.keyboard.press("End")
+        await self.page.keyboard.type(national, delay=90)
+        await self._pause(0.6, 1.3)
 
         submit = await self._find(S.PHONE_SUBMIT)
         await submit.click()
 
         # منتظر ظاهر شدن فیلد کد
-        await self._find(S.CODE_INPUT, timeout=20000)
+        await self._find(S.CODE_INPUT, timeout=25000)
         logger.info("کد برای %s درخواست شد.", phone)
         return True
 
@@ -197,17 +216,23 @@ class EitaaClient:
         """کد تأیید را وارد و در صورت موفقیت سشِن را ذخیره می‌کند."""
         code_field = await self._find(S.CODE_INPUT)
         await code_field.click()
-        await code_field.fill(code)
-        await self._pause(0.4, 1.0)
+        # تلگرام‌وب کد را رقم‌به‌رقم می‌خواند و اغلب خودکار ثبت می‌کند.
+        await self.page.keyboard.type(code, delay=140)
+        await self._pause(0.6, 1.2)
 
+        # اگر دکمه‌ای بود بزن، وگرنه Enter (هر دو بی‌ضررند).
         try:
-            submit = await self._find(S.CODE_SUBMIT, timeout=5000)
+            submit = await self._find(S.CODE_SUBMIT, timeout=4000)
             await submit.click()
         except PWTimeout:
-            await code_field.press("Enter")
+            try:
+                await self.page.keyboard.press("Enter")
+            except Exception:  # noqa: BLE001
+                pass
 
-        # منتظر لیست چت‌ها (نشانه‌ی لاگین موفق)
-        await self._find(S.CHAT_LIST, timeout=30000)
+        # منتظر لیست چت‌ها (نشانه‌ی لاگین موفق). اگر رمز دومرحله‌ای فعال باشد
+        # این‌جا تایم‌اوت می‌خورد و اسکرین‌شات دیباگ ذخیره می‌شود.
+        await self._find(S.CHAT_LIST, timeout=45000)
         await self.save_session()
         logger.info("لاگین موفق برای اکانت %s", self.account_id)
         return True
@@ -216,8 +241,12 @@ class EitaaClient:
     # مخاطبین
     # ------------------------------------------------------------------ #
     async def open_contacts(self) -> None:
-        button = await self._find(S.CONTACTS_MENU_BUTTON)
-        await button.click()
+        # منوی همبرگری بالا-چپ را باز کن، بعد آیتم «مخاطبین» را بزن.
+        menu = await self._find(S.CONTACTS_MENU_BUTTON)
+        await menu.click()
+        await self._pause(0.4, 0.9)
+        item = await self._find(S.CONTACTS_MENU_ITEM)
+        await item.click()
         await self._find(S.CONTACT_ITEM, timeout=15000)
 
     async def list_contacts(self, max_scroll: int = 80) -> List[str]:
