@@ -125,7 +125,10 @@ class EitaaClient:
         timeout = timeout or config.DEFAULT_TIMEOUT
         per = max(1000, int(timeout / len(candidates)))
         for sel in candidates:
-            loc = self.page.locator(sel).first
+            # وقتی دنبال المان قابل‌مشاهده‌ایم، المان‌های مخفی (باقی‌مانده از
+            # صفحات قبلیِ تلگرام‌وب) را نادیده بگیر تا روی هیچ گیر نکنیم.
+            effective = f"{sel} >> visible=true" if state == "visible" else sel
+            loc = self.page.locator(effective).first
             try:
                 await loc.wait_for(state=state, timeout=per)
                 return loc
@@ -207,7 +210,9 @@ class EitaaClient:
         submit = await self._find(S.PHONE_SUBMIT)
         await submit.click()
 
-        # منتظر ظاهر شدن فیلد کد
+        # کمی صبر تا انیمیشن گذار به صفحه‌ی کد تمام شود
+        await self._pause(1.0, 2.0)
+        # منتظر ظاهر شدن فیلد کد (فقط نسخه‌ی قابل‌مشاهده)
         await self._find(S.CODE_INPUT, timeout=25000)
         logger.info("کد برای %s درخواست شد.", phone)
         return True
