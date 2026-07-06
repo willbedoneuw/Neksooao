@@ -231,28 +231,31 @@ class EitaaClient:
         if not phone:
             raise ValueError("شماره لازم است.")
 
+        logger.info("① باز کردن صفحه‌ی ایتاوب ...")
         await self.page.goto(config.EITAA_WEB_URL, wait_until="domcontentloaded")
         if await self.is_logged_in():
-            logger.info("از قبل لاگین است.")
+            logger.info("قبلاً لاگین بوده؛ نیازی به کد نیست.")
             return False
 
         # فیلد شماره یک contenteditable است که از قبل +98 دارد؛
         # کلیک می‌کنیم، مکان‌نما را به آخر می‌بریم و بخش ملی شماره را تایپ می‌کنیم.
+        national = normalize_iran_phone(phone)
+        logger.info("② وارد کردن شماره (+98 %s) ...", national)
         phone_field = await self._find(S.PHONE_INPUT)
         await phone_field.click()
-        national = normalize_iran_phone(phone)
         await self.page.keyboard.press("End")
         await self.page.keyboard.type(national, delay=90)
         await self._pause(0.6, 1.3)
 
+        logger.info("③ زدن دکمه‌ی «ادامه» ...")
         submit = await self._find(S.PHONE_SUBMIT)
         await submit.click()
 
         # کمی صبر تا انیمیشن گذار به صفحه‌ی کد تمام شود
         await self._pause(1.0, 2.0)
-        # منتظر ظاهر شدن فیلد کد (فقط نسخه‌ی قابل‌مشاهده)
+        logger.info("④ منتظر ظاهر شدن فیلد کد ...")
         await self._find(S.CODE_INPUT, timeout=25000)
-        logger.info("کد برای %s درخواست شد.", phone)
+        logger.info("✅ فیلد کد پیدا شد. حالا کد ارسالی ایتا را وارد کن.")
         return True
 
     async def submit_code(self, code: str) -> bool:

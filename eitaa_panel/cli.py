@@ -14,7 +14,8 @@ import asyncio
 import logging
 
 from . import config
-from .eitaa_client import EitaaClient
+from . import selectors as S
+from .eitaa_client import EitaaClient, normalize_iran_phone
 
 
 def _setup_logging() -> None:
@@ -197,6 +198,51 @@ async def cmd_inspect(args: argparse.Namespace) -> None:
         await client.close()
 
 
+async def cmd_probe(args: argparse.Namespace) -> None:
+    """شماره را وارد و «ادامه» را می‌زند، سپس ساختار صفحه‌ی بعدی را چاپ می‌کند.
+
+    برای فهمیدن ساختار صفحه‌ی «کد» بدون نیاز به وارد کردن کد.
+    """
+    client = EitaaClient(args.account, headless=config.HEADLESS)
+    await client.start()
+    try:
+        await client.page.goto(config.EITAA_WEB_URL, wait_until="domcontentloaded")
+        await client.page.wait_for_timeout(3000)
+
+        print("\n========== صفحه‌ی ۱ (قبل از وارد کردن شماره) ==========")
+        print(await client.describe_page())
+
+        national = normalize_iran_phone(args.phone)
+        print(f"\n>>> تایپ شماره: +98 {national}")
+        try:
+            field = await client._find(S.PHONE_INPUT)
+            await field.click()
+            await client.page.keyboard.press("End")
+            await client.page.keyboard.type(national, delay=90)
+            await client.page.wait_for_timeout(1000)
+        except Exception as exc:  # noqa: BLE001
+            print("⚠️ خطا هنگام تایپ شماره:", exc)
+
+        print(">>> زدن دکمه‌ی «ادامه» ...")
+        try:
+            btn = await client._find(S.PHONE_SUBMIT)
+            await btn.click()
+        except Exception as exc:  # noqa: BLE001
+            print("⚠️ خطا هنگام زدن ادامه:", exc)
+
+        # صبر تا صفحه‌ی بعدی کامل بیاید
+        await client.page.wait_for_timeout(6000)
+
+        print("\n========== صفحه‌ی ۲ (بعد از «ادامه») — این مهم است ==========")
+        print(await client.describe_page())
+
+        base = await client.dump_debug("probe")
+        if base:
+            print(f"\nعکس و HTML صفحه: {base}.png / {base}.html")
+    finally:
+        await client.close()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="eitaa_panel.cli", description="تست بخش ایتا")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -205,6 +251,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_inspect.add_argument("--account", required=True)
     p_inspect.add_argument("--wait", type=int, default=7, help="ثانیه صبر تا صفحه کامل بارگذاری شود")
     p_inspect.set_defaults(func=cmd_inspect)
+
+    p_probe = sub.add_parser("probe", help="تشخیص ساختار صفحه‌ی کد (شماره را می‌زند و ادامه)")
+    p_probe.add_argument("--account", required=True)
+    p_probe.add_argument("--phone", required=True)
+    p_probe.set_defaults(func=cmd_probe)
 
     p_login = sub.add_parser("login", help="لاگین و ذخیره‌ی سشِن (تعاملی)")
     p_login.add_argument("--account", required=True, help="شناسه‌ی دلخواه اکانت، مثل acc1")

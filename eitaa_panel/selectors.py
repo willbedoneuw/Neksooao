@@ -37,10 +37,20 @@ CODE_SUBMIT = [
 # --- نشانه‌های لاگین موفق ---
 CHAT_LIST = [
     "#column-left",
+    "#column-center",
+    "#page-chats",
     ".chatlist",
     "ul.chatlist",
     ".chatlist-container",
+    ".sidebar-header",
     ".input-search-input",
+]
+
+# فیلد رمز تأیید دومرحله‌ای (اگر اکانت 2FA داشته باشد)
+PASSWORD_INPUT = [
+    'input[type="password"]',
+    '.input-field-input[type="password"]',
+    'div.input-field-input[contenteditable="true"][type="password"]',
 ]
 
 # --- جستجو و باز کردن چت ---
