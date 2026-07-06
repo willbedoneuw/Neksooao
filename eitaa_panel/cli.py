@@ -110,8 +110,11 @@ async def cmd_contacts(args: argparse.Namespace) -> None:
     except Exception as exc:  # noqa: BLE001
         base = await client.dump_debug("contacts")
         print(f"خطا: {exc}")
+        print("\n=========== ساختار صفحه‌ی فعلی ===========")
+        print(await client.describe_page())
+        print("==========================================")
         if base:
-            print(f"دیباگ ذخیره شد: {base}.png و {base}.html")
+            print(f"عکس/HTML: {base}.png و {base}.html")
         raise
     finally:
         await client.close()
@@ -130,8 +133,11 @@ async def cmd_send(args: argparse.Namespace) -> None:
     except Exception as exc:  # noqa: BLE001
         base = await client.dump_debug("send")
         print(f"خطا در ارسال: {exc}")
+        print("\n=========== ساختار صفحه‌ی فعلی ===========")
+        print(await client.describe_page())
+        print("==========================================")
         if base:
-            print(f"دیباگ ذخیره شد: {base}.png و {base}.html")
+            print(f"عکس/HTML: {base}.png و {base}.html")
         raise
     finally:
         await client.close()
