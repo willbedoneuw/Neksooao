@@ -63,7 +63,11 @@ async def cmd_login(args: argparse.Namespace) -> None:
             return
 
         code = (await _ainput("کدی که ایتا فرستاد را وارد کن: ")).strip()
-        await client.submit_code(code)
+        status = await client.submit_code(code)
+        if status == "need_password":
+            print("🔐 این اکانت رمز دومرحله‌ای دارد.")
+            password = (await _ainput("رمز دومرحله‌ای (کلمه‌ی عبور ایتا) را وارد کن: ")).strip()
+            await client.submit_password(password)
         print("لاگین موفق بود و سشِن ذخیره شد. ✅")
     except Exception as exc:  # noqa: BLE001
         base = await client.dump_debug("login")

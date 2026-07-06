@@ -48,8 +48,13 @@ CHAT_LIST = [
 # فیلد رمز تأیید دومرحله‌ای (اگر اکانت 2FA داشته باشد)
 PASSWORD_INPUT = [
     'input[type="password"]',
-    '.input-field-input[type="password"]',
-    'div.input-field-input[contenteditable="true"][type="password"]',
+    'input.input-field-input[type="password"]',
+]
+PASSWORD_SUBMIT = [
+    'button.btn-primary:has-text("بعدی")',
+    'button.btn-primary:has-text("ورود")',
+    'button.btn-primary:has-text("تایید")',
+    "button.btn-primary",
 ]
 
 # --- جستجو و باز کردن چت ---

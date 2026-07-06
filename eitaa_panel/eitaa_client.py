@@ -258,31 +258,76 @@ class EitaaClient:
         logger.info("✅ فیلد کد پیدا شد. حالا کد ارسالی ایتا را وارد کن.")
         return True
 
-    async def submit_code(self, code: str) -> bool:
-        """کد تأیید را وارد و در صورت موفقیت سشِن را ذخیره می‌کند."""
+    async def _await_login_or_password(self, timeout_ms: int = 45000) -> Optional[str]:
+        """منتظر می‌ماند تا یکی از این‌ها ظاهر شود: صفحه‌ی چت (لاگین موفق) یا فیلد رمز.
+
+        برمی‌گرداند: "logged_in" | "need_password" | None (هیچ‌کدام / تایم‌اوت)
+        """
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + timeout_ms / 1000
+        while loop.time() < deadline:
+            try:
+                await self._find(S.PASSWORD_INPUT, timeout=1200)
+                return "need_password"
+            except PWTimeout:
+                pass
+            try:
+                await self._find(S.CHAT_LIST, timeout=1200)
+                return "logged_in"
+            except PWTimeout:
+                pass
+        return None
+
+    async def submit_code(self, code: str) -> str:
+        """کد را وارد می‌کند.
+
+        برمی‌گرداند:
+            "logged_in"     → لاگین کامل شد (سشِن ذخیره شد)
+            "need_password" → اکانت رمز دومرحله‌ای دارد؛ باید submit_password صدا زده شود
+        """
         logger.info("⑤ وارد کردن کد ...")
         code_field = await self._find(S.CODE_INPUT)
         await code_field.click()
         # با تایپ رقم‌به‌رقم، تلگرام‌وب کد را خودکار ثبت می‌کند.
         # هیچ دکمه‌ای نمی‌زنیم تا اشتباهی روی «ارسال مجدد کد» کلیک نشود.
         await self.page.keyboard.type(code, delay=140)
-        logger.info("⑥ کد ثبت شد، منتظر ورود به اکانت ...")
+        logger.info("⑥ کد ثبت شد، منتظر نتیجه ...")
         await self._pause(0.8, 1.5)
+
+        result = await self._await_login_or_password(timeout_ms=45000)
+        if result == "logged_in":
+            await self.save_session()
+            logger.info("✅ لاگین موفق برای اکانت %s", self.account_id)
+            return "logged_in"
+        if result == "need_password":
+            logger.info("🔐 اکانت رمز دومرحله‌ای دارد؛ منتظر رمز.")
+            return "need_password"
+        raise RuntimeError(
+            "بعد از کد نه صفحه‌ی چت آمد نه فیلد رمز؛ احتمالاً کد اشتباه/منقضی بوده."
+        )
+
+    async def submit_password(self, password: str) -> bool:
+        """رمز تأیید دومرحله‌ای را وارد و سشِن را ذخیره می‌کند."""
+        logger.info("⑦ وارد کردن رمز دومرحله‌ای ...")
+        field = await self._find(S.PASSWORD_INPUT)
+        await field.click()
+        await self.page.keyboard.type(password, delay=110)
+        await self._pause(0.5, 1.0)
+
+        # دکمه‌ی تأیید یا Enter
+        try:
+            btn = await self._find(S.PASSWORD_SUBMIT, timeout=4000)
+            await btn.click()
+        except PWTimeout:
+            await self.page.keyboard.press("Enter")
 
         try:
             await self._find(S.CHAT_LIST, timeout=45000)
         except PWTimeout:
-            # شاید کد اشتباه بوده یا اکانت رمز دومرحله‌ای دارد.
-            if await self._resolve(S.PASSWORD_INPUT, timeout=3000):
-                raise RuntimeError(
-                    "این اکانت «تأیید دومرحله‌ای (رمز عبور)» دارد که فعلاً پشتیبانی نمی‌شود."
-                )
-            raise RuntimeError(
-                "بعد از کد وارد نشد؛ احتمالاً کد اشتباه/منقضی بوده. دوباره امتحان کن."
-            )
+            raise RuntimeError("بعد از رمز وارد نشد؛ احتمالاً رمز اشتباه بوده.")
 
         await self.save_session()
-        logger.info("✅ لاگین موفق برای اکانت %s", self.account_id)
+        logger.info("✅ لاگین موفق (با رمز دومرحله‌ای) برای اکانت %s", self.account_id)
         return True
 
     # ------------------------------------------------------------------ #
