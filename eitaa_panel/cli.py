@@ -153,9 +153,55 @@ async def cmd_broadcast(args: argparse.Namespace) -> None:
         await client.close()
 
 
+async def cmd_inspect(args: argparse.Namespace) -> None:
+    """صفحه‌ی فعلی را باز می‌کند و همه‌ی input/button ها را چاپ می‌کند تا سلکتورها را تنظیم کنیم."""
+    client = await _with_client(args)
+    try:
+        await client.page.wait_for_timeout(args.wait * 1000)
+        print("URL   :", client.page.url)
+        try:
+            print("TITLE :", await client.page.title())
+        except Exception:  # noqa: BLE001
+            pass
+
+        inputs = await client.page.eval_on_selector_all(
+            "input", "els => els.map(e => e.outerHTML)"
+        )
+        print(f"\n===== INPUTS ({len(inputs)}) =====")
+        for html in inputs:
+            print(html)
+
+        buttons = await client.page.eval_on_selector_all(
+            "button",
+            "els => els.map(e => (e.innerText || e.getAttribute('aria-label') || '') "
+            "+ '  ||  ' + e.outerHTML.slice(0, 160))",
+        )
+        print(f"\n===== BUTTONS ({len(buttons)}) =====")
+        for line in buttons:
+            print(line)
+
+        contenteditables = await client.page.eval_on_selector_all(
+            "[contenteditable='true']", "els => els.map(e => e.outerHTML.slice(0, 200))"
+        )
+        print(f"\n===== CONTENTEDITABLE ({len(contenteditables)}) =====")
+        for html in contenteditables:
+            print(html)
+
+        base = await client.dump_debug("inspect")
+        if base:
+            print(f"\nاسکرین‌شات و HTML کامل اینجا ذخیره شد:\n  {base}.png\n  {base}.html")
+    finally:
+        await client.close()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="eitaa_panel.cli", description="تست بخش ایتا")
     sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p_inspect = sub.add_parser("inspect", help="بازرسی صفحه برای تنظیم سلکتورها")
+    p_inspect.add_argument("--account", required=True)
+    p_inspect.add_argument("--wait", type=int, default=7, help="ثانیه صبر تا صفحه کامل بارگذاری شود")
+    p_inspect.set_defaults(func=cmd_inspect)
 
     p_login = sub.add_parser("login", help="لاگین و ذخیره‌ی سشِن (تعاملی)")
     p_login.add_argument("--account", required=True, help="شناسه‌ی دلخواه اکانت، مثل acc1")
