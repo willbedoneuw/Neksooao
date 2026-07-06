@@ -168,6 +168,44 @@ class EitaaClient:
             logger.error("ذخیره‌ی دیباگ ناموفق بود: %s", exc)
             return None
 
+    async def describe_page(self) -> str:
+        """ساختار المان‌های قابل‌مشاهده‌ی صفحه‌ی فعلی را متنی برمی‌گرداند (برای تنظیم سلکتور)."""
+        if self.page is None:
+            return "(no page)"
+        lines: List[str] = []
+        try:
+            lines.append(f"URL   : {self.page.url}")
+            lines.append(f"TITLE : {await self.page.title()}")
+        except Exception:  # noqa: BLE001
+            pass
+
+        async def _grab(selector: str, js: str, header: str) -> None:
+            try:
+                items = await self.page.eval_on_selector_all(selector, js)
+                lines.append(f"\n[{header} = {len(items)}]")
+                lines.extend(str(x) for x in items)
+            except Exception as exc:  # noqa: BLE001
+                lines.append(f"\n[{header}] خطا: {exc}")
+
+        vis = "els => els.filter(e => e.offsetParent !== null)"
+        await _grab("input", f"{vis}.map(e => e.outerHTML)", "VISIBLE INPUTS")
+        await _grab(
+            "[contenteditable='true']",
+            f"{vis}.map(e => e.outerHTML.slice(0, 220))",
+            "VISIBLE CONTENTEDITABLE",
+        )
+        await _grab(
+            "button",
+            f"{vis}.map(e => ((e.innerText||e.getAttribute('aria-label')||'').trim()) + '  ||  class=' + e.className)",
+            "VISIBLE BUTTONS",
+        )
+        await _grab(
+            "h1,h2,h3,h4,label,.subtitle,.i18n,.input-field",
+            f"{vis}.map(e => (e.innerText||'').trim()).filter(t => t).slice(0, 40)",
+            "VISIBLE TEXT",
+        )
+        return "\n".join(lines)
+
     async def _pause(self, a: float = 0.3, b: float = 1.0) -> None:
         await asyncio.sleep(random.uniform(a, b))
 

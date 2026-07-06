@@ -67,8 +67,11 @@ async def cmd_login(args: argparse.Namespace) -> None:
     except Exception as exc:  # noqa: BLE001
         base = await client.dump_debug("login")
         print(f"خطا در لاگین: {exc}")
+        print("\n=================== ساختار صفحه‌ی فعلی ===================")
+        print(await client.describe_page())
+        print("=========================================================")
         if base:
-            print(f"برای دیباگ این فایل‌ها ذخیره شد: {base}.png و {base}.html")
+            print(f"عکس/HTML کامل: {base}.png و {base}.html")
         raise
     finally:
         await client.close()
