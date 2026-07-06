@@ -1,0 +1,14 @@
+# سشِن‌ها و مدیا و رازها هرگز کامیت نشن
+sessions/
+media/
+logs/
+debug/
+.env
+
+# پایتون
+__pycache__/
+*.pyc
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/

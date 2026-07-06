@@ -1,0 +1,372 @@
+"""کلاینت اتوماسیون ایتاوب با Playwright.
+
+هر نمونه یک اکانت را مدیریت می‌کند و سشِن آن را جدا نگه می‌دارد.
+
+متدهای اصلی:
+    - start() / close()            : باز و بسته کردن مرورگر
+    - is_logged_in()               : بررسی لاگین بودن
+    - request_login_code(phone)    : وارد کردن شماره و درخواست کد
+    - submit_code(code)            : وارد کردن کد و ذخیره سشِن
+    - list_contacts()              : لیست نام مخاطبین
+    - get_contact_count()          : تعداد مخاطبین
+    - send_to_contact(...)         : ارسال به یک مخاطب
+    - broadcast(...)               : ارسال به همه مخاطبین
+"""
+
+import asyncio
+import logging
+import random
+from datetime import datetime
+from typing import Awaitable, Callable, List, Optional, Sequence, Tuple
+
+from playwright.async_api import (
+    BrowserContext,
+    Page,
+    TimeoutError as PWTimeout,
+    async_playwright,
+)
+
+from . import config
+from . import selectors as S
+
+logger = logging.getLogger(__name__)
+
+# نتیجه‌ی ارسال به هر مخاطب: (نام، موفق؟، پیام خطا)
+SendResult = Tuple[str, bool, Optional[str]]
+
+
+class EitaaClient:
+    def __init__(
+        self,
+        account_id: str,
+        phone: Optional[str] = None,
+        headless: Optional[bool] = None,
+    ):
+        self.account_id = account_id
+        self.phone = phone
+        self.headless = config.HEADLESS if headless is None else headless
+        self.storage_path = config.session_path(account_id)
+
+        self._pw = None
+        self._browser = None
+        self.context: Optional[BrowserContext] = None
+        self.page: Optional[Page] = None
+
+    # ------------------------------------------------------------------ #
+    # چرخه‌ی حیات مرورگر
+    # ------------------------------------------------------------------ #
+    async def start(self) -> "EitaaClient":
+        self._pw = await async_playwright().start()
+        self._browser = await self._pw.chromium.launch(headless=self.headless)
+
+        context_kwargs = {
+            "locale": "fa-IR",
+            "viewport": {"width": 1280, "height": 800},
+        }
+        if self.storage_path.exists():
+            context_kwargs["storage_state"] = str(self.storage_path)
+            logger.info("سشِن قبلی بارگذاری شد: %s", self.storage_path)
+
+        self.context = await self._browser.new_context(**context_kwargs)
+        self.context.set_default_timeout(config.DEFAULT_TIMEOUT)
+        self.page = await self.context.new_page()
+        await self.page.goto(config.EITAA_WEB_URL, wait_until="domcontentloaded")
+        return self
+
+    async def close(self) -> None:
+        for closer in (
+            getattr(self.context, "close", None),
+            getattr(self._browser, "close", None),
+            getattr(self._pw, "stop", None),
+        ):
+            if closer is None:
+                continue
+            try:
+                await closer()
+            except Exception:  # noqa: BLE001 - بستن نباید کرش کند
+                pass
+
+    async def save_session(self) -> None:
+        if self.context:
+            await self.context.storage_state(path=str(self.storage_path))
+            logger.info("سشِن ذخیره شد: %s", self.storage_path)
+
+    async def __aenter__(self) -> "EitaaClient":
+        return await self.start()
+
+    async def __aexit__(self, *exc) -> None:
+        await self.close()
+
+    # ------------------------------------------------------------------ #
+    # کمک‌کننده‌ها
+    # ------------------------------------------------------------------ #
+    async def _find(self, candidates: Sequence[str], timeout: Optional[int] = None, state: str = "visible"):
+        """اولین سلکتوری که پیدا شود را به‌صورت Locator برمی‌گرداند."""
+        timeout = timeout or config.DEFAULT_TIMEOUT
+        per = max(1000, int(timeout / len(candidates)))
+        for sel in candidates:
+            loc = self.page.locator(sel).first
+            try:
+                await loc.wait_for(state=state, timeout=per)
+                return loc
+            except PWTimeout:
+                continue
+        raise PWTimeout(f"هیچ‌کدام از سلکتورها پیدا نشد: {list(candidates)}")
+
+    async def _resolve(self, candidates: Sequence[str], timeout: int = 8000) -> Optional[str]:
+        """اولین رشته‌ی سلکتوری که حداقل یک المان دارد را برمی‌گرداند."""
+        per = max(800, int(timeout / len(candidates)))
+        for sel in candidates:
+            try:
+                await self.page.locator(sel).first.wait_for(state="attached", timeout=per)
+                return sel
+            except PWTimeout:
+                continue
+        return None
+
+    async def dump_debug(self, label: str = "error") -> Optional[str]:
+        """هنگام خطا از صفحه اسکرین‌شات و HTML می‌گیرد تا دیباگ سلکتورها راحت شود.
+
+        مسیرِ پایه‌ی فایل‌ها را برمی‌گرداند (بدون پسوند).
+        """
+        if not config.DEBUG_ON_ERROR or self.page is None:
+            return None
+        safe = "".join(c for c in label if c.isalnum() or c in ("-", "_"))[:40]
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base = config.DEBUG_DIR / f"{self.account_id}_{safe}_{stamp}"
+        try:
+            await self.page.screenshot(path=f"{base}.png", full_page=True)
+            html = await self.page.content()
+            with open(f"{base}.html", "w", encoding="utf-8") as fh:
+                fh.write(html)
+            logger.warning("دیباگ ذخیره شد: %s.png و %s.html", base, base)
+            return str(base)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("ذخیره‌ی دیباگ ناموفق بود: %s", exc)
+            return None
+
+    async def _pause(self, a: float = 0.3, b: float = 1.0) -> None:
+        await asyncio.sleep(random.uniform(a, b))
+
+    async def _send_delay(self) -> None:
+        await asyncio.sleep(random.uniform(config.MIN_SEND_DELAY, config.MAX_SEND_DELAY))
+
+    # ------------------------------------------------------------------ #
+    # لاگین
+    # ------------------------------------------------------------------ #
+    async def is_logged_in(self) -> bool:
+        try:
+            await self._find(S.CHAT_LIST, timeout=8000)
+            return True
+        except PWTimeout:
+            return False
+
+    async def request_login_code(self, phone: Optional[str] = None) -> bool:
+        """شماره را وارد و کد تأیید را درخواست می‌کند.
+
+        اگر از قبل لاگین باشد False برمی‌گرداند، در غیر این صورت True.
+        """
+        phone = phone or self.phone
+        if not phone:
+            raise ValueError("شماره لازم است.")
+
+        await self.page.goto(config.EITAA_WEB_URL, wait_until="domcontentloaded")
+        if await self.is_logged_in():
+            logger.info("از قبل لاگین است.")
+            return False
+
+        phone_field = await self._find(S.PHONE_INPUT)
+        await phone_field.click()
+        await phone_field.fill(phone)
+        await self._pause(0.5, 1.2)
+
+        submit = await self._find(S.PHONE_SUBMIT)
+        await submit.click()
+
+        # منتظر ظاهر شدن فیلد کد
+        await self._find(S.CODE_INPUT, timeout=20000)
+        logger.info("کد برای %s درخواست شد.", phone)
+        return True
+
+    async def submit_code(self, code: str) -> bool:
+        """کد تأیید را وارد و در صورت موفقیت سشِن را ذخیره می‌کند."""
+        code_field = await self._find(S.CODE_INPUT)
+        await code_field.click()
+        await code_field.fill(code)
+        await self._pause(0.4, 1.0)
+
+        try:
+            submit = await self._find(S.CODE_SUBMIT, timeout=5000)
+            await submit.click()
+        except PWTimeout:
+            await code_field.press("Enter")
+
+        # منتظر لیست چت‌ها (نشانه‌ی لاگین موفق)
+        await self._find(S.CHAT_LIST, timeout=30000)
+        await self.save_session()
+        logger.info("لاگین موفق برای اکانت %s", self.account_id)
+        return True
+
+    # ------------------------------------------------------------------ #
+    # مخاطبین
+    # ------------------------------------------------------------------ #
+    async def open_contacts(self) -> None:
+        button = await self._find(S.CONTACTS_MENU_BUTTON)
+        await button.click()
+        await self._find(S.CONTACT_ITEM, timeout=15000)
+
+    async def list_contacts(self, max_scroll: int = 80) -> List[str]:
+        """لیست نام مخاطبین را با اسکرول تدریجی جمع‌آوری می‌کند."""
+        await self.open_contacts()
+        item_sel = await self._resolve(S.CONTACT_ITEM, timeout=15000)
+        if not item_sel:
+            logger.warning("آیتم مخاطب پیدا نشد؛ سلکتورها را در selectors.py چک کن.")
+            return []
+
+        names: List[str] = []
+        seen = set()
+        prev_total = -1
+        stable = 0
+
+        for _ in range(max_scroll):
+            items = self.page.locator(item_sel)
+            count = await items.count()
+            for i in range(count):
+                item = items.nth(i)
+                try:
+                    text = (await item.inner_text()).strip().splitlines()[0].strip()
+                except Exception:  # noqa: BLE001
+                    continue
+                if text and text not in seen:
+                    seen.add(text)
+                    names.append(text)
+
+            if len(names) == prev_total:
+                stable += 1
+                if stable >= 3:  # چند بار پشت‌سرهم بدون تغییر → تمام شد
+                    break
+            else:
+                stable = 0
+                prev_total = len(names)
+
+            if count:
+                try:
+                    await items.nth(count - 1).scroll_into_view_if_needed()
+                except Exception:  # noqa: BLE001
+                    pass
+            await self._pause(0.3, 0.7)
+
+        logger.info("تعداد مخاطبین یافت‌شده: %d", len(names))
+        return names
+
+    async def get_contact_count(self) -> int:
+        return len(await self.list_contacts())
+
+    # ------------------------------------------------------------------ #
+    # ارسال
+    # ------------------------------------------------------------------ #
+    async def open_chat(self, query: str) -> None:
+        """با جستجو، چت یک مخاطب را باز می‌کند."""
+        search = await self._find(S.SEARCH_INPUT)
+        await search.click()
+        await search.fill("")
+        await search.type(query, delay=40)
+        await self._pause(0.8, 1.6)
+
+        result_sel = await self._resolve(S.SEARCH_RESULT_ITEM, timeout=10000)
+        if not result_sel:
+            raise RuntimeError(f"نتیجه‌ای برای «{query}» پیدا نشد.")
+        await self.page.locator(result_sel).first.click()
+        await self._find(S.MESSAGE_INPUT, timeout=15000)
+
+    async def send_text(self, text: str) -> None:
+        box = await self._find(S.MESSAGE_INPUT)
+        await box.click()
+        await box.fill(text)
+        await self._pause(0.3, 0.8)
+        try:
+            btn = await self._find(S.SEND_BUTTON, timeout=4000)
+            await btn.click()
+        except PWTimeout:
+            await box.press("Enter")
+
+    async def send_media(self, media_path: str, caption: Optional[str] = None) -> None:
+        media_path = str(media_path)
+
+        file_sel = await self._resolve(S.FILE_INPUT, timeout=4000)
+        if not file_sel:
+            # شاید لازم است اول دکمه‌ی ضمیمه کلیک شود تا input ساخته شود
+            try:
+                attach = await self._find(S.ATTACH_BUTTON, timeout=4000)
+                await attach.click()
+            except PWTimeout:
+                pass
+            file_sel = await self._resolve(S.FILE_INPUT, timeout=6000)
+        if not file_sel:
+            raise RuntimeError("input[type=file] پیدا نشد؛ سلکتورهای ATTACH/FILE را چک کن.")
+
+        await self.page.locator(file_sel).first.set_input_files(media_path)
+
+        if caption:
+            try:
+                cap = await self._find(S.CAPTION_INPUT, timeout=6000)
+                await cap.click()
+                await cap.fill(caption)
+            except PWTimeout:
+                logger.warning("فیلد کپشن پیدا نشد؛ بدون کپشن ارسال می‌شود.")
+
+        await self._pause(0.4, 1.0)
+        confirm = await self._find(S.MEDIA_SEND_CONFIRM)
+        await confirm.click()
+
+    async def send_to_contact(
+        self,
+        query: str,
+        text: Optional[str] = None,
+        media_path: Optional[str] = None,
+        caption: Optional[str] = None,
+    ) -> None:
+        """به یک مخاطب پیام می‌فرستد. اگر media_path باشد فایل/عکس (با کپشن) وگرنه متن."""
+        if not text and not media_path:
+            raise ValueError("چیزی برای ارسال داده نشده (نه متن نه فایل).")
+
+        await self.open_chat(query)
+        if media_path:
+            await self.send_media(media_path, caption=caption or text)
+        else:
+            await self.send_text(text)
+        await self._pause(0.5, 1.2)
+
+    async def broadcast(
+        self,
+        text: Optional[str] = None,
+        media_path: Optional[str] = None,
+        caption: Optional[str] = None,
+        contacts: Optional[List[str]] = None,
+        progress: Optional[Callable[[int, int, str, bool], Awaitable[None]]] = None,
+    ) -> List[SendResult]:
+        """به همه‌ی مخاطبین (یا لیست داده‌شده) ارسال می‌کند."""
+        if contacts is None:
+            contacts = await self.list_contacts()
+
+        results: List[SendResult] = []
+        total = len(contacts)
+        for index, name in enumerate(contacts, start=1):
+            try:
+                await self.send_to_contact(name, text=text, media_path=media_path, caption=caption)
+                results.append((name, True, None))
+                logger.info("[%d/%d] ارسال شد → %s", index, total, name)
+                ok = True
+            except Exception as exc:  # noqa: BLE001
+                results.append((name, False, str(exc)))
+                logger.error("[%d/%d] ناموفق → %s: %s", index, total, name, exc)
+                await self.dump_debug(f"broadcast_{index}_{name}")
+                ok = False
+
+            if progress:
+                await progress(index, total, name, ok)
+
+            if index < total:
+                await self._send_delay()  # مکث تصادفی ضد بن
+
+        return results
