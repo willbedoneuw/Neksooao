@@ -260,27 +260,29 @@ class EitaaClient:
 
     async def submit_code(self, code: str) -> bool:
         """کد تأیید را وارد و در صورت موفقیت سشِن را ذخیره می‌کند."""
+        logger.info("⑤ وارد کردن کد ...")
         code_field = await self._find(S.CODE_INPUT)
         await code_field.click()
-        # تلگرام‌وب کد را رقم‌به‌رقم می‌خواند و اغلب خودکار ثبت می‌کند.
+        # با تایپ رقم‌به‌رقم، تلگرام‌وب کد را خودکار ثبت می‌کند.
+        # هیچ دکمه‌ای نمی‌زنیم تا اشتباهی روی «ارسال مجدد کد» کلیک نشود.
         await self.page.keyboard.type(code, delay=140)
-        await self._pause(0.6, 1.2)
+        logger.info("⑥ کد ثبت شد، منتظر ورود به اکانت ...")
+        await self._pause(0.8, 1.5)
 
-        # اگر دکمه‌ای بود بزن، وگرنه Enter (هر دو بی‌ضررند).
         try:
-            submit = await self._find(S.CODE_SUBMIT, timeout=4000)
-            await submit.click()
+            await self._find(S.CHAT_LIST, timeout=45000)
         except PWTimeout:
-            try:
-                await self.page.keyboard.press("Enter")
-            except Exception:  # noqa: BLE001
-                pass
+            # شاید کد اشتباه بوده یا اکانت رمز دومرحله‌ای دارد.
+            if await self._resolve(S.PASSWORD_INPUT, timeout=3000):
+                raise RuntimeError(
+                    "این اکانت «تأیید دومرحله‌ای (رمز عبور)» دارد که فعلاً پشتیبانی نمی‌شود."
+                )
+            raise RuntimeError(
+                "بعد از کد وارد نشد؛ احتمالاً کد اشتباه/منقضی بوده. دوباره امتحان کن."
+            )
 
-        # منتظر لیست چت‌ها (نشانه‌ی لاگین موفق). اگر رمز دومرحله‌ای فعال باشد
-        # این‌جا تایم‌اوت می‌خورد و اسکرین‌شات دیباگ ذخیره می‌شود.
-        await self._find(S.CHAT_LIST, timeout=45000)
         await self.save_session()
-        logger.info("لاگین موفق برای اکانت %s", self.account_id)
+        logger.info("✅ لاگین موفق برای اکانت %s", self.account_id)
         return True
 
     # ------------------------------------------------------------------ #

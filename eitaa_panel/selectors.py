@@ -21,18 +21,17 @@ PHONE_SUBMIT = [
     'button:has-text("ادامه")',
     'button:has-text("Next")',
 ]
-# صفحه‌ی کد بعد از «ادامه» می‌آید؛ فیلد کد هم contenteditable است.
+# صفحه‌ی کد بعد از «ادامه» می‌آید؛ فیلد کد یک <input type="tel"> است
+# با کلاس input-field-input (نه contenteditable). از روی DOM واقعی تأیید شد.
 CODE_INPUT = [
-    '.input-field-input[inputmode="numeric"]',
-    'div.input-field-input[contenteditable="true"]',
-    '.input-field-input[inputmode="decimal"]',
-    'input[autocomplete="one-time-code"]',
+    'input.input-field-input[type="tel"]',
+    'input[type="tel"]',
+    "input.input-field-input",
+    "input[required]",
 ]
-# تلگرام‌وب معمولاً کد را خودکار ثبت می‌کند؛ این‌ها فقط برای احتیاط‌اند.
-CODE_SUBMIT = [
-    'button.btn-primary:has-text("بعدی")',
-    'button.btn-primary:has-text("ورود")',
-]
+# ⚠️ روی صفحه‌ی کد فقط دکمه‌ی «ارسال مجدد با پیامک» هست که نباید زده شود.
+# تلگرام‌وب کد را خودکار ثبت می‌کند، پس دکمه‌ای نمی‌زنیم.
+CODE_SUBMIT: list = []
 
 # --- نشانه‌های لاگین موفق ---
 CHAT_LIST = [
